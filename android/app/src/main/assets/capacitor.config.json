@@ -1,0 +1,5 @@
+{
+	"appId": "com.taskflow.todo",
+	"appName": "TaskFlow Todo",
+	"webDir": "dist"
+}
