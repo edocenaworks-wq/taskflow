@@ -73,6 +73,11 @@ export default function App() {
     localStorage.setItem('taskflow-primary', primaryColor);
   }, [primaryColor]);
 
+  const [isIOS, setIsIOS] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+
+  const [isStandalone, setIsStandalone] = useState(false);
+
   // Handle PWA installation
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
@@ -84,10 +89,19 @@ export default function App() {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
+    // Check if iOS
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    setIsIOS(isIOSDevice);
+
     // Check if already in standalone mode
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      console.log('App is running in standalone mode');
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    setIsStandalone(standalone);
+    if (standalone) {
       setShowInstallBtn(false);
+    } else {
+      // If not standalone, we can show the button even if prompt hasn't fired yet
+      // but we'll use it to show instructions
+      setShowInstallBtn(true);
     }
 
     return () => {
@@ -96,12 +110,15 @@ export default function App() {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-      setShowInstallBtn(false);
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setShowInstallBtn(false);
+      }
+    } else {
+      setShowInstallModal(true);
     }
   };
 
@@ -223,7 +240,7 @@ export default function App() {
                 ))}
               </div>
 
-              {showInstallBtn && (
+              {showInstallBtn && !isStandalone && (
                 <button
                   id="install-pwa-btn"
                   onClick={handleInstallClick}
@@ -248,6 +265,72 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Install Modal */}
+        <AnimatePresence>
+          {showInstallModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="w-full max-w-md bg-white dark:bg-[#2D2D2D] rounded-3xl p-8 shadow-2xl"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className="p-3 bg-primary/10 rounded-2xl">
+                    <Download className="w-6 h-6 text-primary" />
+                  </div>
+                  <button onClick={() => setShowInstallModal(false)} className="p-2 opacity-40 hover:opacity-100 transition-opacity">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <h2 className="text-2xl font-semibold mb-2">Install TaskFlow</h2>
+                <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+                  Install TaskFlow on your device for a better experience, offline access, and quick launch from your home screen.
+                </p>
+
+                {isIOS ? (
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl">
+                      <div className="flex-shrink-0 w-8 h-8 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+                        <span className="text-sm font-bold">1</span>
+                      </div>
+                      <p className="text-sm">Tap the <span className="font-bold">Share</span> button in Safari.</p>
+                    </div>
+                    <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl">
+                      <div className="flex-shrink-0 w-8 h-8 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+                        <span className="text-sm font-bold">2</span>
+                      </div>
+                      <p className="text-sm">Scroll down and tap <span className="font-bold">"Add to Home Screen"</span>.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl">
+                      <div className="flex-shrink-0 w-8 h-8 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+                        <span className="text-sm font-bold">1</span>
+                      </div>
+                      <p className="text-sm">Click the <span className="font-bold">Install</span> button in your browser's address bar or menu.</p>
+                    </div>
+                    <div className="flex items-start gap-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-2xl">
+                      <div className="flex-shrink-0 w-8 h-8 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+                        <span className="text-sm font-bold">2</span>
+                      </div>
+                      <p className="text-sm">Confirm the installation when prompted.</p>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowInstallModal(false)}
+                  className="w-full mt-8 py-4 bg-primary text-white rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  Got it
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Category Filter Bar */}
         <div className="mb-8 flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar">
