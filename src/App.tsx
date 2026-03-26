@@ -19,6 +19,14 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
+  
+  const [primaryColor, setPrimaryColor] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('taskflow-primary') || '#515C97';
+    }
+    return '#515C97';
+  });
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('taskflow-theme');
@@ -26,6 +34,18 @@ export default function App() {
     }
     return false;
   });
+
+  const colors = [
+    { name: 'Indigo', value: '#515C97' },
+    { name: 'Red', value: '#db2929' },
+    { name: 'Original', value: '#1A1A1A' },
+  ];
+
+  // Handle color changes
+  useEffect(() => {
+    document.documentElement.style.setProperty('--primary', primaryColor);
+    localStorage.setItem('taskflow-primary', primaryColor);
+  }, [primaryColor]);
 
   // Handle PWA installation
   useEffect(() => {
@@ -120,7 +140,20 @@ export default function App() {
             <h1 className="text-5xl font-light tracking-tight">Focus on what matters.</h1>
           </div>
           <div className="flex flex-col items-end gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              {/* Color Selector */}
+              <div className="flex items-center gap-2 p-1.5 bg-white dark:bg-[#2D2D2D] rounded-full shadow-sm">
+                {colors.map((color) => (
+                  <button
+                    key={color.value}
+                    onClick={() => setPrimaryColor(color.value)}
+                    className={`w-5 h-5 rounded-full transition-all hover:scale-110 active:scale-90 ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : 'opacity-60 hover:opacity-100'}`}
+                    style={{ backgroundColor: color.value }}
+                    title={color.name}
+                  />
+                ))}
+              </div>
+
               {showInstallBtn && (
                 <button
                   onClick={handleInstallClick}

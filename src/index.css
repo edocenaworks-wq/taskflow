@@ -1,9 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
 @import "tailwindcss";
 
+:root {
+  --primary: #515C97;
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-primary: #515C97;
+  --color-primary: var(--primary);
 }
 
 @variant dark (&:where(.dark, .dark *));
