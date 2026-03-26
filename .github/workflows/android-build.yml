@@ -41,9 +41,10 @@ jobs:
 
       - name: Initialize Android Platform
         run: |
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
+          # Remove existing android folder to ensure a clean, valid build environment
+          # This prevents issues with corrupted gradle wrappers or incomplete folders
+          rm -rf android
+          npx cap add android
           npx cap sync android
 
       - name: Build Android APK
