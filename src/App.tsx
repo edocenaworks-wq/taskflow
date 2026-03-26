@@ -3,16 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown } from 'lucide-react';
+
+interface Category {
+  id: string;
+  name: string;
+  color: string;
+}
 
 interface Todo {
   id: string;
   text: string;
   completed: boolean;
   createdAt: number;
+  categoryId?: string;
 }
+
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: '1', name: 'Work', color: '#515C97' },
+  { id: '2', name: 'Personal', color: '#10b981' },
+  { id: '3', name: 'Urgent', color: '#ef4444' },
+];
 
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -20,6 +33,19 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState(false);
   
+  const [categories, setCategories] = useState<Category[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('taskflow-categories');
+      return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+    }
+    return DEFAULT_CATEGORIES;
+  });
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [filterCategoryId, setFilterCategoryId] = useState<string | 'all'>('all');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
   const [primaryColor, setPrimaryColor] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('taskflow-primary') || '#515C97';
@@ -96,6 +122,11 @@ export default function App() {
     localStorage.setItem('taskflow-todos', JSON.stringify(todos));
   }, [todos]);
 
+  // Save categories to localStorage
+  useEffect(() => {
+    localStorage.setItem('taskflow-categories', JSON.stringify(categories));
+  }, [categories]);
+
   // Handle theme changes
   useEffect(() => {
     if (isDarkMode) {
@@ -116,11 +147,41 @@ export default function App() {
       text: inputValue.trim(),
       completed: false,
       createdAt: Date.now(),
+      categoryId: selectedCategoryId || undefined,
     };
 
     setTodos([newTodo, ...todos]);
     setInputValue('');
+    setSelectedCategoryId(null);
   };
+
+  const addCategory = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+
+    const newCategory: Category = {
+      id: crypto.randomUUID(),
+      name: newCategoryName.trim(),
+      color: primaryColor, // Use current primary color for new categories
+    };
+
+    setCategories([...categories, newCategory]);
+    setNewCategoryName('');
+    setIsAddingCategory(false);
+  };
+
+  const deleteCategory = (id: string) => {
+    setCategories(categories.filter(c => c.id !== id));
+    // Also remove this category from todos
+    setTodos(todos.map(t => t.categoryId === id ? { ...t, categoryId: undefined } : t));
+    if (filterCategoryId === id) setFilterCategoryId('all');
+    if (selectedCategoryId === id) setSelectedCategoryId(null);
+  };
+
+  const filteredTodos = useMemo(() => {
+    if (filterCategoryId === 'all') return todos;
+    return todos.filter(todo => todo.categoryId === filterCategoryId);
+  }, [todos, filterCategoryId]);
 
   const toggleTodo = (id: string) => {
     setTodos(todos.map(todo => 
@@ -132,7 +193,7 @@ export default function App() {
     setTodos(todos.filter(todo => todo.id !== id));
   };
 
-  const completedCount = todos.filter(t => t.completed).length;
+  const completedCount = filteredTodos.filter(t => t.completed).length;
 
   return (
     <div className="min-h-screen font-sans selection:bg-gray-200 dark:selection:bg-gray-700">
@@ -188,38 +249,127 @@ export default function App() {
           </div>
         </header>
 
-        {/* Input Section */}
-        <form onSubmit={addTodo} className="relative mb-12 group">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="What's next?"
-            className="w-full bg-white dark:bg-[#2D2D2D] border-none rounded-2xl px-6 py-5 text-lg shadow-sm focus:ring-2 focus:ring-primary transition-all duration-300 outline-none placeholder:opacity-30"
-          />
+        {/* Category Filter Bar */}
+        <div className="mb-8 flex items-center gap-3 overflow-x-auto pb-2 no-scrollbar">
           <button
-            type="submit"
-            disabled={!inputValue.trim()}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-primary text-white rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+            onClick={() => setFilterCategoryId('all')}
+            className={`flex-shrink-0 px-4 py-2 rounded-xl text-xs font-medium transition-all ${filterCategoryId === 'all' ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-[#2D2D2D] opacity-60 hover:opacity-100'}`}
           >
-            <Plus className="w-5 h-5" />
+            All Tasks
           </button>
-        </form>
+          {categories.map((cat) => (
+            <div key={cat.id} className="relative group flex-shrink-0">
+              <button
+                onClick={() => setFilterCategoryId(cat.id)}
+                className={`px-4 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 ${filterCategoryId === cat.id ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-[#2D2D2D] opacity-60 hover:opacity-100'}`}
+              >
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                {cat.name}
+              </button>
+              <button 
+                onClick={() => deleteCategory(cat.id)}
+                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity scale-75"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setIsAddingCategory(!isAddingCategory)}
+            className="flex-shrink-0 p-2 bg-white dark:bg-[#2D2D2D] rounded-xl opacity-60 hover:opacity-100 transition-all"
+            title="Add Category"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Add Category Form */}
+        <AnimatePresence>
+          {isAddingCategory && (
+            <motion.form
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              onSubmit={addCategory}
+              className="mb-8 overflow-hidden"
+            >
+              <div className="flex gap-2 p-4 bg-white dark:bg-[#2D2D2D] rounded-2xl shadow-sm border border-primary/20">
+                <input
+                  autoFocus
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Category name..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm"
+                />
+                <button type="submit" className="p-2 bg-primary text-white rounded-lg">
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => setIsAddingCategory(false)} className="p-2 opacity-50">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
+        {/* Input Section */}
+        <div className="mb-12 space-y-4">
+          <form onSubmit={addTodo} className="relative group">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="What's next?"
+              className="w-full bg-white dark:bg-[#2D2D2D] border-none rounded-2xl px-6 py-5 text-lg shadow-sm focus:ring-2 focus:ring-primary transition-all duration-300 outline-none placeholder:opacity-30"
+            />
+            <button
+              type="submit"
+              disabled={!inputValue.trim()}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-primary text-white rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </form>
+
+          {/* Category Selector for New Task */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+            <span className="text-[10px] uppercase tracking-wider opacity-40 mr-2">Tag:</span>
+            <button
+              onClick={() => setSelectedCategoryId(null)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${!selectedCategoryId ? 'bg-gray-200 dark:bg-gray-700 opacity-100' : 'opacity-40 hover:opacity-60'}`}
+            >
+              None
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategoryId(cat.id)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 ${selectedCategoryId === cat.id ? 'bg-primary/20 text-primary opacity-100' : 'opacity-40 hover:opacity-60'}`}
+              >
+                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Stats Bar */}
         <div className="flex items-center justify-between mb-6 px-2">
           <div className="flex items-center gap-4">
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider opacity-50">Completed</span>
-              <span className="text-sm font-medium">{completedCount} of {todos.length}</span>
+              <span className="text-[10px] uppercase tracking-wider opacity-50">
+                {filterCategoryId === 'all' ? 'Completed' : `${categories.find(c => c.id === filterCategoryId)?.name} Tasks`}
+              </span>
+              <span className="text-sm font-medium">{completedCount} of {filteredTodos.length}</span>
             </div>
           </div>
-          {todos.length > 0 && (
+          {filteredTodos.length > 0 && (
              <div className="h-1 flex-1 mx-8 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
                 <motion.div 
                   className="h-full bg-primary"
                   initial={{ width: 0 }}
-                  animate={{ width: `${(completedCount / todos.length) * 100}%` }}
+                  animate={{ width: `${(completedCount / filteredTodos.length) * 100}%` }}
                 />
              </div>
           )}
@@ -228,41 +378,52 @@ export default function App() {
         {/* Todo List */}
         <div className="space-y-3">
           <AnimatePresence mode="popLayout">
-            {todos.map((todo) => (
-              <motion.div
-                key={todo.id}
-                layout
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                className={`group flex items-center gap-4 bg-white dark:bg-[#2D2D2D] p-4 rounded-2xl shadow-sm border border-transparent hover:border-gray-200 dark:hover:border-gray-800 transition-all duration-300 ${todo.completed ? 'opacity-60' : ''}`}
-              >
-                <button
-                  onClick={() => toggleTodo(todo.id)}
-                  className="flex-shrink-0 transition-transform hover:scale-110 active:scale-90"
+            {filteredTodos.map((todo) => {
+              const category = categories.find(c => c.id === todo.categoryId);
+              return (
+                <motion.div
+                  key={todo.id}
+                  layout
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                  className={`group flex items-center gap-4 bg-white dark:bg-[#2D2D2D] p-4 rounded-2xl shadow-sm border border-transparent hover:border-gray-200 dark:hover:border-gray-800 transition-all duration-300 ${todo.completed ? 'opacity-60' : ''}`}
                 >
-                  {todo.completed ? (
-                    <CheckCircle2 className="w-6 h-6 text-primary" />
-                  ) : (
-                    <Circle className="w-6 h-6 text-gray-300 dark:text-gray-600" />
-                  )}
-                </button>
-                
-                <span className={`flex-grow text-lg transition-all duration-300 ${todo.completed ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
-                  {todo.text}
-                </span>
+                  <button
+                    onClick={() => toggleTodo(todo.id)}
+                    className="flex-shrink-0 transition-transform hover:scale-110 active:scale-90"
+                  >
+                    {todo.completed ? (
+                      <CheckCircle2 className="w-6 h-6 text-primary" />
+                    ) : (
+                      <Circle className="w-6 h-6 text-gray-300 dark:text-gray-600" />
+                    )}
+                  </button>
+                  
+                  <div className="flex-grow flex flex-col gap-1">
+                    <span className={`text-lg transition-all duration-300 ${todo.completed ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
+                      {todo.text}
+                    </span>
+                    {category && (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wider opacity-40">{category.name}</span>
+                      </div>
+                    )}
+                  </div>
 
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-lg transition-all duration-200"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </motion.div>
-            ))}
+                  <button
+                    onClick={() => deleteTodo(todo.id)}
+                    className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-lg transition-all duration-200"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
 
-          {todos.length === 0 && (
+          {filteredTodos.length === 0 && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -271,7 +432,11 @@ export default function App() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-[#2D2D2D] mb-4">
                 <ListTodo className="w-8 h-8 text-gray-300 dark:text-gray-700" />
               </div>
-              <p className="text-gray-400 dark:text-gray-600 font-light">Your list is empty. Add a task to get started.</p>
+              <p className="text-gray-400 dark:text-gray-600 font-light">
+                {filterCategoryId === 'all' 
+                  ? "Your list is empty. Add a task to get started." 
+                  : `No tasks found in ${categories.find(c => c.id === filterCategoryId)?.name}.`}
+              </p>
             </motion.div>
           )}
         </div>
