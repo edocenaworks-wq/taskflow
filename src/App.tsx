@@ -50,12 +50,19 @@ export default function App() {
   // Handle PWA installation
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
+      console.log('beforeinstallprompt event fired');
       e.preventDefault();
       setDeferredPrompt(e);
       setShowInstallBtn(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if already in standalone mode
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      console.log('App is running in standalone mode');
+      setShowInstallBtn(false);
+    }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -142,9 +149,10 @@ export default function App() {
           <div className="flex flex-col items-end gap-4">
             <div className="flex items-center gap-4">
               {/* Color Selector */}
-              <div className="flex items-center gap-2 p-1.5 bg-white dark:bg-[#2D2D2D] rounded-full shadow-sm">
-                {colors.map((color) => (
+              <div id="color-selector" className="flex items-center gap-2 p-1.5 bg-white dark:bg-[#2D2D2D] rounded-full shadow-sm">
+                {colors.map((color, index) => (
                   <button
+                    id={`color-btn-${color.name.toLowerCase()}`}
                     key={color.value}
                     onClick={() => setPrimaryColor(color.value)}
                     className={`w-5 h-5 rounded-full transition-all hover:scale-110 active:scale-90 ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : 'opacity-60 hover:opacity-100'}`}
@@ -156,6 +164,7 @@ export default function App() {
 
               {showInstallBtn && (
                 <button
+                  id="install-pwa-btn"
                   onClick={handleInstallClick}
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all text-xs font-medium"
                 >
@@ -164,6 +173,7 @@ export default function App() {
                 </button>
               )}
               <button
+                id="theme-toggle-btn"
                 onClick={() => setIsDarkMode(!isDarkMode)}
                 className="p-3 bg-white dark:bg-[#2D2D2D] rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all"
                 aria-label="Toggle theme"
