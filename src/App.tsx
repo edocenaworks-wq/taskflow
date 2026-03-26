@@ -43,7 +43,7 @@ export default function App() {
 
   // Handle color changes
   useEffect(() => {
-    document.documentElement.style.setProperty('--primary', primaryColor);
+    document.documentElement.style.setProperty('--primary-color', primaryColor);
     localStorage.setItem('taskflow-primary', primaryColor);
   }, [primaryColor]);
 
@@ -128,7 +128,7 @@ export default function App() {
   const completedCount = todos.filter(t => t.completed).length;
 
   return (
-    <div className="min-h-screen font-sans selection:bg-primary selection:text-white">
+    <div className="min-h-screen font-sans selection:bg-gray-200 dark:selection:bg-gray-700">
       <div className="max-w-2xl mx-auto px-6 py-20">
         {/* Header Section */}
         <header className="mb-12 flex items-end justify-between">
