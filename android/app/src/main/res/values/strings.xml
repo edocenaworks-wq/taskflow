@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">TaskFlow Todo</string>
-    <string name="title_activity_main">TaskFlow Todo</string>
-    <string name="package_name">com.taskflow.todo</string>
-    <string name="custom_url_scheme">com.taskflow.todo</string>
-</resources>

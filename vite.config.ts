@@ -2,28 +2,13 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
-import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [
       react(), 
-      tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: [],
-        manifestFilename: 'manifest.json',
-        manifest: {
-          name: 'TaskFlow PWA',
-          short_name: 'TaskFlow',
-          description: 'A beautiful and simple todo app with categories.',
-          theme_color: '#515C97',
-          background_color: '#f5f5f5',
-          display: 'standalone',
-          icons: []
-        }
-      })
+      tailwindcss()
     ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
