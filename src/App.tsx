@@ -242,16 +242,6 @@ export default function App() {
                 ))}
               </div>
 
-              {showInstallBtn && !isStandalone && (
-                <button
-                  id="install-pwa-btn"
-                  onClick={handleInstallClick}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl shadow-sm hover:scale-105 active:scale-95 transition-all text-xs font-medium"
-                >
-                  <Download className="w-4 h-4" />
-                  Install App
-                </button>
-              )}
               <button
                 id="theme-toggle-btn"
                 onClick={() => setIsDarkMode(!isDarkMode)}
