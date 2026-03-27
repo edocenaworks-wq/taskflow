@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, FormEvent, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown } from 'lucide-react';
 
@@ -93,13 +94,14 @@ export default function App() {
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     setIsIOS(isIOSDevice);
 
-    // Check if already in standalone mode
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    // Check if already in standalone mode or native
+    const isNative = Capacitor.isNativePlatform();
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true || isNative;
     setIsStandalone(standalone);
-    if (standalone) {
+    if (standalone || isNative) {
       setShowInstallBtn(false);
     } else {
-      // If not standalone, we can show the button even if prompt hasn't fired yet
+      // If not standalone and not native, we can show the button even if prompt hasn't fired yet
       // but we'll use it to show instructions
       setShowInstallBtn(true);
     }
