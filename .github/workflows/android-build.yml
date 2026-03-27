@@ -52,15 +52,30 @@ jobs:
           ./gradlew assembleRelease
         
       - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
         id: sign_app
-        with:
-          releaseDirectory: android/app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0
+        run: |
+          # Decodifica il keystore dai segreti
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          
+          # Trova gli strumenti di build più recenti (zipalign e apksigner)
+          BUILD_TOOLS_PATH=$(ls -d $ANDROID_HOME/build-tools/* | tail -1)
+          echo "Using build tools from: $BUILD_TOOLS_PATH"
+          
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          SIGNED_APK_PATH="android/app/build/outputs/apk/release/app-release-signed.apk"
+          
+          # Allineamento dell'APK (Zipalign)
+          $BUILD_TOOLS_PATH/zipalign -v 4 $APK_PATH $SIGNED_APK_PATH
+          
+          # Firma dell'APK (Apksigner)
+          $BUILD_TOOLS_PATH/apksigner sign --ks release.keystore \
+            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
+            --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
+            --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
+            --out $SIGNED_APK_PATH $SIGNED_APK_PATH
+            
+          # Esporta il percorso per lo step successivo
+          echo "signedReleaseFile=$SIGNED_APK_PATH" >> $GITHUB_OUTPUT
           
       - name: Automatic Release
         uses: marvinpinto/action-automatic-releases@latest
