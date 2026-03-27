@@ -43,6 +43,9 @@ jobs:
             npx cap add android
           fi
           
+          # Generiamo le icone e lo splash screen
+          npx capacitor-assets generate --android
+          
           # Sincronizziamo i file web e i plugin
           npx cap sync android
           
