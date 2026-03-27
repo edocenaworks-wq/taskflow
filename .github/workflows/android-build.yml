@@ -36,13 +36,18 @@ jobs:
           
       - name: Build APK
         run: |
-          cd android
-          echo "Listing files in android directory:"
-          ls -la
-          if [ ! -f "gradlew" ]; then
-            echo "ERROR: gradlew not found in android directory!"
-            exit 1
+          # Se la cartella android manca o è incompleta, la rigeneriamo
+          if [ ! -d "android" ] || [ ! -f "android/gradlew" ]; then
+            echo "Cartella Android mancante o incompleta. Rigenerazione in corso..."
+            rm -rf android
+            npx cap add android
           fi
+          
+          # Sincronizziamo i file web e i plugin
+          npx cap sync android
+          
+          # Entriamo nella cartella e compiliamo
+          cd android
           chmod +x gradlew
           ./gradlew assembleRelease
         
