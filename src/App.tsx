@@ -6,7 +6,7 @@
 import { useState, useEffect, FormEvent, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson } from 'lucide-react';
 
 interface Category {
   id: string;
@@ -213,6 +213,45 @@ export default function App() {
   };
 
   const completedCount = filteredTodos.filter(t => t.completed).length;
+
+  const exportData = () => {
+    const data = {
+      todos,
+      categories,
+      primaryColor,
+      isDarkMode
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `taskflow-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (data.todos) setTodos(data.todos);
+        if (data.categories) setCategories(data.categories);
+        if (data.primaryColor) setPrimaryColor(data.primaryColor);
+        if (data.isDarkMode) setIsDarkMode(data.isDarkMode);
+        alert('Data imported successfully!');
+      } catch (err) {
+        console.error('Failed to import data', err);
+        alert('Invalid backup file.');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="min-h-screen font-sans selection:bg-gray-200 dark:selection:bg-gray-700">
@@ -517,10 +556,27 @@ export default function App() {
         </div>
 
         {/* Footer */}
-        <footer className="mt-20 pt-8 border-t border-gray-200 dark:border-gray-800 text-center">
-          <p className="text-[10px] uppercase tracking-[0.2em] opacity-30">
-            Built with precision & simplicity
-          </p>
+        <footer className="mt-20 pt-8 border-t border-gray-200 dark:border-gray-800">
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={exportData}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-[#2D2D2D] rounded-xl text-xs font-medium opacity-60 hover:opacity-100 transition-all"
+                title="Export Data"
+              >
+                <Download className="w-4 h-4" />
+                Export Backup
+              </button>
+              <label className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-[#2D2D2D] rounded-xl text-xs font-medium opacity-60 hover:opacity-100 transition-all cursor-pointer">
+                <Upload className="w-4 h-4" />
+                Import Backup
+                <input type="file" accept=".json" onChange={importData} className="hidden" />
+              </label>
+            </div>
+            <p className="text-[10px] uppercase tracking-[0.2em] opacity-30">
+              Built with precision & simplicity
+            </p>
+          </div>
         </footer>
       </div>
     </div>
