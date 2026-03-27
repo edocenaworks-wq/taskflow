@@ -260,7 +260,6 @@ export default function App() {
         <header className="mb-12 flex items-end justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <ListTodo className="w-6 h-6" />
               <span className="text-xs font-semibold uppercase tracking-widest opacity-50">TaskFlow</span>
             </div>
             <h1 className="text-5xl font-light tracking-tight">Focus on what matters.</h1>

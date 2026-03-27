@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.png'],
+        includeAssets: [],
         manifestFilename: 'manifest.json',
         manifest: {
           name: 'TaskFlow PWA',
@@ -21,24 +21,7 @@ export default defineConfig(({mode}) => {
           theme_color: '#515C97',
           background_color: '#f5f5f5',
           display: 'standalone',
-          icons: [
-            {
-              src: 'favicon.png',
-              sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'favicon.png',
-              sizes: '512x512',
-              type: 'image/png'
-            },
-            {
-              src: 'favicon.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable'
-            }
-          ]
+          icons: []
         }
       })
     ],
