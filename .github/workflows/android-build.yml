@@ -23,8 +23,10 @@ jobs:
         run: npm run build
         
       - name: Sync Capacitor
-        run: npx cap sync android
-        
+        run: |
+          npm run build
+          npx cap sync android
+          
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -33,7 +35,16 @@ jobs:
           cache: 'gradle'
           
       - name: Build APK
-        run: cd android && chmod +x gradlew && ./gradlew assembleRelease
+        run: |
+          cd android
+          echo "Listing files in android directory:"
+          ls -la
+          if [ ! -f "gradlew" ]; then
+            echo "ERROR: gradlew not found in android directory!"
+            exit 1
+          fi
+          chmod +x gradlew
+          ./gradlew assembleRelease
         
       - name: Sign APK
         uses: r0adkll/sign-android-release@v1
