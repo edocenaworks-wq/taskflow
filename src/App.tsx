@@ -34,6 +34,8 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: '3', name: 'Urgent', color: '#ef4444' },
 ];
 
+const CURRENT_VERSION = '1.0.0';
+
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -57,6 +59,8 @@ export default function App() {
   const [reminderTime, setReminderTime] = useState<string>('');
   const [isSettingReminder, setIsSettingReminder] = useState(false);
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; notes: string; url: string } | null>(null);
+  const [showUpdatePopup, setShowUpdatePopup] = useState(false);
 
   const [primaryColor, setPrimaryColor] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -129,6 +133,28 @@ export default function App() {
       }
     };
     requestPermissions();
+  }, []);
+
+  // Check for updates
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        // Fetch from the shared app URL or relative path
+        const response = await fetch('/version.json');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.version && data.version !== CURRENT_VERSION) {
+            setUpdateInfo(data);
+            setShowUpdatePopup(true);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check for updates', e);
+      }
+    };
+    
+    // Check on mount
+    checkForUpdates();
   }, []);
 
   const scheduleNotification = async (todo: Todo, timeStr: string) => {
@@ -870,6 +896,59 @@ export default function App() {
           </div>
         </footer>
       </div>
+
+      {/* Update Available Popup */}
+      <AnimatePresence>
+        {showUpdatePopup && updateInfo && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="w-full max-w-sm bg-white dark:bg-[#2D2D2D] rounded-[32px] p-8 shadow-2xl border border-primary/20"
+            >
+              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                <Download className="w-8 h-8 text-primary" />
+              </div>
+              
+              <h3 className="text-2xl font-semibold text-center mb-2">Update Available</h3>
+              <p className="text-center text-sm opacity-60 mb-6">
+                A new version of TaskFlow is ready. 
+                <span className="block mt-1 font-medium text-primary">v{updateInfo.version}</span>
+              </p>
+              
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-4 mb-8">
+                <span className="text-[10px] uppercase tracking-wider opacity-40 block mb-2">What's New:</span>
+                <p className="text-xs leading-relaxed opacity-80">
+                  {updateInfo.notes}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <a
+                  href={updateInfo.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 rounded-2xl bg-primary text-white font-semibold text-center shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  Download Now
+                </a>
+                <button
+                  onClick={() => setShowUpdatePopup(false)}
+                  className="w-full py-4 rounded-2xl bg-gray-100 dark:bg-gray-800 font-medium text-sm hover:opacity-80 transition-all"
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
