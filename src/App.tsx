@@ -5,7 +5,8 @@
 
 import { useState, useEffect, FormEvent, useMemo, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson, Bell, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 interface Category {
   id: string;
@@ -19,6 +20,8 @@ interface Todo {
   completed: boolean;
   createdAt: number;
   categoryId?: string;
+  dueDate?: string; // ISO string
+  reminderId?: number;
 }
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -43,6 +46,9 @@ export default function App() {
   const [filterCategoryId, setFilterCategoryId] = useState<string | 'all'>('all');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [dueDate, setDueDate] = useState<string>('');
+  const [reminderTime, setReminderTime] = useState<string>('');
+  const [isSettingReminder, setIsSettingReminder] = useState(false);
 
   const [primaryColor, setPrimaryColor] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -104,21 +110,90 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  const addTodo = (e?: FormEvent) => {
+  // Request notification permissions
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        const result = await LocalNotifications.requestPermissions();
+        console.log('Notification permission result:', result);
+      } catch (e) {
+        console.error('Failed to request notification permissions', e);
+      }
+    };
+    requestPermissions();
+  }, []);
+
+  const scheduleNotification = async (todo: Todo, timeStr: string) => {
+    if (!timeStr) return undefined;
+    
+    const scheduleDate = new Date(timeStr);
+    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
+      return undefined;
+    }
+
+    const id = Math.floor(Math.random() * 1000000);
+    
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            title: 'Task Reminder',
+            body: todo.text,
+            id: id,
+            schedule: { at: scheduleDate },
+            sound: 'default',
+            attachments: [],
+            actionTypeId: '',
+            extra: null,
+          },
+        ],
+      });
+      return id;
+    } catch (e) {
+      console.error('Failed to schedule notification', e);
+      return undefined;
+    }
+  };
+
+  const cancelNotification = async (id?: number) => {
+    if (id === undefined) return;
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id }] });
+    } catch (e) {
+      console.error('Failed to cancel notification', e);
+    }
+  };
+
+  const addTodo = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!inputValue.trim()) return;
 
-    const newTodo: Todo = {
-      id: crypto.randomUUID(),
+    const todoId = crypto.randomUUID();
+    const newTodoBase: Todo = {
+      id: todoId,
       text: inputValue.trim(),
       completed: false,
       createdAt: Date.now(),
       categoryId: selectedCategoryId || undefined,
+      dueDate: dueDate || undefined,
+    };
+
+    let reminderId: number | undefined = undefined;
+    if (reminderTime) {
+      reminderId = await scheduleNotification(newTodoBase, reminderTime);
+    }
+
+    const newTodo: Todo = {
+      ...newTodoBase,
+      reminderId,
     };
 
     setTodos([newTodo, ...todos]);
     setInputValue('');
     setSelectedCategoryId(null);
+    setDueDate('');
+    setReminderTime('');
+    setIsSettingReminder(false);
   };
 
   const addCategory = (e: FormEvent) => {
@@ -150,12 +225,24 @@ export default function App() {
   }, [todos, filterCategoryId]);
 
   const toggleTodo = (id: string) => {
-    setTodos(todos.map(todo => 
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
+    setTodos(todos.map(todo => {
+      if (todo.id === id) {
+        const newCompleted = !todo.completed;
+        // If completed, cancel reminder
+        if (newCompleted && todo.reminderId) {
+          cancelNotification(todo.reminderId);
+        }
+        return { ...todo, completed: newCompleted };
+      }
+      return todo;
+    }));
   };
 
   const deleteTodo = (id: string) => {
+    const todoToDelete = todos.find(t => t.id === id);
+    if (todoToDelete?.reminderId) {
+      cancelNotification(todoToDelete.reminderId);
+    }
     setTodos(todos.filter(todo => todo.id !== id));
   };
 
@@ -326,26 +413,81 @@ export default function App() {
             </button>
           </form>
 
-          {/* Category Selector for New Task */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-            <span className="text-[10px] uppercase tracking-wider opacity-40 mr-2">Tag:</span>
-            <button
-              onClick={() => setSelectedCategoryId(null)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${!selectedCategoryId ? 'bg-gray-200 dark:bg-gray-700 opacity-100' : 'opacity-40 hover:opacity-60'}`}
-            >
-              None
-            </button>
-            {categories.map((cat) => (
+          {/* Task Options (Category, Due Date, Reminder) */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Category Selector */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar flex-grow">
+              <span className="text-[10px] uppercase tracking-wider opacity-40 mr-2">Tag:</span>
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategoryId(cat.id)}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 ${selectedCategoryId === cat.id ? 'bg-primary/20 text-primary opacity-100' : 'opacity-40 hover:opacity-60'}`}
+                onClick={() => setSelectedCategoryId(null)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all ${!selectedCategoryId ? 'bg-gray-200 dark:bg-gray-700 opacity-100' : 'opacity-40 hover:opacity-60'}`}
               >
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
-                {cat.name}
+                None
               </button>
-            ))}
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategoryId(cat.id)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 ${selectedCategoryId === cat.id ? 'bg-primary/20 text-primary opacity-100' : 'opacity-40 hover:opacity-60'}`}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Due Date & Reminder Buttons */}
+            <div className="flex items-center gap-2 pb-2">
+              <div className="relative">
+                <button
+                  onClick={() => setIsSettingReminder(!isSettingReminder)}
+                  className={`p-2 rounded-xl transition-all ${dueDate || reminderTime ? 'bg-primary/10 text-primary' : 'bg-white dark:bg-[#2D2D2D] opacity-60 hover:opacity-100'}`}
+                  title="Set Due Date & Reminder"
+                >
+                  <Bell className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Reminder/Due Date Form */}
+          <AnimatePresence>
+            {isSettingReminder && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-white dark:bg-[#2D2D2D] rounded-2xl shadow-sm border border-primary/10">
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider opacity-50">
+                      <CalendarIcon className="w-3 h-3" />
+                      Due Date
+                    </label>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-[#1A1A1A] border-none rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider opacity-50">
+                      <Clock className="w-3 h-3" />
+                      Reminder
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={reminderTime}
+                      onChange={(e) => setReminderTime(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-[#1A1A1A] border-none rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Stats Bar */}
@@ -398,12 +540,28 @@ export default function App() {
                     <span className={`text-lg transition-all duration-300 ${todo.completed ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
                       {todo.text}
                     </span>
-                    {category && (
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
-                        <span className="text-[10px] font-semibold uppercase tracking-wider opacity-40">{category.name}</span>
-                      </div>
-                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {category && (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider opacity-40">{category.name}</span>
+                        </div>
+                      )}
+                      {todo.dueDate && (
+                        <div className="flex items-center gap-1.5 opacity-40">
+                          <CalendarIcon className="w-3 h-3" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider">
+                            {new Date(todo.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      )}
+                      {todo.reminderId && !todo.completed && (
+                        <div className="flex items-center gap-1.5 text-primary/60">
+                          <Bell className="w-3 h-3" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider">Reminder Set</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <button
