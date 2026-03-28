@@ -5,8 +5,11 @@
 
 import { useState, useEffect, FormEvent, useMemo, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson, Bell, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { Share } from '@capacitor/share';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 
 interface Category {
   id: string;
@@ -21,6 +24,7 @@ interface Todo {
   createdAt: number;
   categoryId?: string;
   dueDate?: string; // ISO string
+  reminderTime?: string; // ISO string
   reminderId?: number;
 }
 
@@ -45,10 +49,14 @@ export default function App() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [filterCategoryId, setFilterCategoryId] = useState<string | 'all'>('all');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [reassignCategoryId, setReassignCategoryId] = useState<string | 'none'>('none');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [dueDate, setDueDate] = useState<string>('');
   const [reminderTime, setReminderTime] = useState<string>('');
   const [isSettingReminder, setIsSettingReminder] = useState(false);
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
 
   const [primaryColor, setPrimaryColor] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -168,27 +176,81 @@ export default function App() {
     e?.preventDefault();
     if (!inputValue.trim()) return;
 
-    const todoId = crypto.randomUUID();
-    const newTodoBase: Todo = {
-      id: todoId,
-      text: inputValue.trim(),
-      completed: false,
-      createdAt: Date.now(),
-      categoryId: selectedCategoryId || undefined,
-      dueDate: dueDate || undefined,
-    };
+    if (editingTodoId) {
+      // Update existing todo
+      const existingTodo = todos.find(t => t.id === editingTodoId);
+      if (!existingTodo) return;
 
-    let reminderId: number | undefined = undefined;
-    if (reminderTime) {
-      reminderId = await scheduleNotification(newTodoBase, reminderTime);
+      // If reminder changed, cancel old and schedule new
+      let newReminderId = existingTodo.reminderId;
+      if (reminderTime !== existingTodo.reminderTime) {
+        if (existingTodo.reminderId) {
+          await cancelNotification(existingTodo.reminderId);
+        }
+        if (reminderTime) {
+          newReminderId = await scheduleNotification({ ...existingTodo, text: inputValue.trim() }, reminderTime);
+        } else {
+          newReminderId = undefined;
+        }
+      }
+
+      setTodos(todos.map(t => t.id === editingTodoId ? {
+        ...t,
+        text: inputValue.trim(),
+        categoryId: selectedCategoryId || undefined,
+        dueDate: dueDate || undefined,
+        reminderTime: reminderTime || undefined,
+        reminderId: newReminderId
+      } : t));
+
+      setEditingTodoId(null);
+    } else {
+      // Add new todo
+      const todoId = crypto.randomUUID();
+      const newTodoBase: Todo = {
+        id: todoId,
+        text: inputValue.trim(),
+        completed: false,
+        createdAt: Date.now(),
+        categoryId: selectedCategoryId || undefined,
+        dueDate: dueDate || undefined,
+        reminderTime: reminderTime || undefined,
+      };
+
+      let reminderId: number | undefined = undefined;
+      if (reminderTime) {
+        reminderId = await scheduleNotification(newTodoBase, reminderTime);
+      }
+
+      const newTodo: Todo = {
+        ...newTodoBase,
+        reminderId,
+      };
+
+      setTodos([newTodo, ...todos]);
     }
 
-    const newTodo: Todo = {
-      ...newTodoBase,
-      reminderId,
-    };
+    setInputValue('');
+    setSelectedCategoryId(null);
+    setDueDate('');
+    setReminderTime('');
+    setIsSettingReminder(false);
+  };
 
-    setTodos([newTodo, ...todos]);
+  const startEditing = (todo: Todo) => {
+    setEditingTodoId(todo.id);
+    setInputValue(todo.text);
+    setSelectedCategoryId(todo.categoryId || null);
+    setDueDate(todo.dueDate || '');
+    setReminderTime(todo.reminderTime || ''); 
+    setIsSettingReminder(!!(todo.dueDate || todo.reminderTime));
+    
+    // Scroll to top to see the edit form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEditing = () => {
+    setEditingTodoId(null);
     setInputValue('');
     setSelectedCategoryId(null);
     setDueDate('');
@@ -211,12 +273,46 @@ export default function App() {
     setIsAddingCategory(false);
   };
 
-  const deleteCategory = (id: string) => {
+  const updateCategory = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingCategoryId || !newCategoryName.trim()) return;
+
+    setCategories(categories.map(c => 
+      c.id === editingCategoryId 
+        ? { ...c, name: newCategoryName.trim(), color: primaryColor } 
+        : c
+    ));
+    
+    setEditingCategoryId(null);
+    setNewCategoryName('');
+  };
+
+  const startEditingCategory = (cat: Category) => {
+    setEditingCategoryId(cat.id);
+    setNewCategoryName(cat.name);
+    setPrimaryColor(cat.color);
+    setIsAddingCategory(false);
+  };
+
+  const deleteCategory = () => {
+    if (!categoryToDelete) return;
+
+    const id = categoryToDelete;
     setCategories(categories.filter(c => c.id !== id));
-    // Also remove this category from todos
-    setTodos(todos.map(t => t.categoryId === id ? { ...t, categoryId: undefined } : t));
+    
+    // Reassign or remove category from todos
+    setTodos(todos.map(t => {
+      if (t.categoryId === id) {
+        return { ...t, categoryId: reassignCategoryId === 'none' ? undefined : reassignCategoryId };
+      }
+      return t;
+    }));
+
     if (filterCategoryId === id) setFilterCategoryId('all');
     if (selectedCategoryId === id) setSelectedCategoryId(null);
+    
+    setCategoryToDelete(null);
+    setReassignCategoryId('none');
   };
 
   const filteredTodos = useMemo(() => {
@@ -248,22 +344,48 @@ export default function App() {
 
   const completedCount = filteredTodos.filter(t => t.completed).length;
 
-  const exportData = () => {
+  const exportData = async () => {
     const data = {
       todos,
       categories,
       primaryColor,
       isDarkMode
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `taskflow-backup-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const fileName = `taskflow-backup-${new Date().toISOString().split('T')[0]}.json`;
+    const jsonString = JSON.stringify(data, null, 2);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // On native platforms, save to file and share
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+
+        await Share.share({
+          title: 'TaskFlow Backup',
+          text: 'Here is your TaskFlow backup file.',
+          url: result.uri,
+          dialogTitle: 'Export Backup',
+        });
+      } catch (e) {
+        console.error('Failed to export on native platform', e);
+        alert('Failed to export backup.');
+      }
+    } else {
+      // Standard web export
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
   };
 
   const importData = (e: ChangeEvent<HTMLInputElement>) => {
@@ -347,12 +469,22 @@ export default function App() {
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
                 {cat.name}
               </button>
-              <button 
-                onClick={() => deleteCategory(cat.id)}
-                className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity scale-75"
-              >
-                <X className="w-3 h-3" />
-              </button>
+              <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity scale-75">
+                <button 
+                  onClick={() => startEditingCategory(cat)}
+                  className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform"
+                  title="Edit Category"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={() => setCategoryToDelete(cat.id)}
+                  className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform"
+                  title="Delete Category"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           ))}
           <button
@@ -364,33 +496,130 @@ export default function App() {
           </button>
         </div>
 
-        {/* Add Category Form */}
+        {/* Add/Edit Category Form */}
         <AnimatePresence>
-          {isAddingCategory && (
+          {(isAddingCategory || editingCategoryId) && (
             <motion.form
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              onSubmit={addCategory}
+              onSubmit={editingCategoryId ? updateCategory : addCategory}
               className="mb-8 overflow-hidden"
             >
-              <div className="flex gap-2 p-4 bg-white dark:bg-[#2D2D2D] rounded-2xl shadow-sm border border-primary/20">
-                <input
-                  autoFocus
-                  type="text"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="Category name..."
-                  className="flex-1 bg-transparent border-none outline-none text-sm"
-                />
-                <button type="submit" className="p-2 bg-primary text-white rounded-lg">
-                  <Plus className="w-4 h-4" />
-                </button>
-                <button type="button" onClick={() => setIsAddingCategory(false)} className="p-2 opacity-50">
-                  <X className="w-4 h-4" />
-                </button>
+              <div className="flex flex-col gap-4 p-4 bg-white dark:bg-[#2D2D2D] rounded-2xl shadow-sm border border-primary/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider opacity-50">
+                    {editingCategoryId ? 'Edit Tag' : 'New Tag'}
+                  </span>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setIsAddingCategory(false);
+                      setEditingCategoryId(null);
+                      setNewCategoryName('');
+                    }} 
+                    className="p-1 opacity-50 hover:opacity-100"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Tag name..."
+                    className="flex-1 bg-transparent border-none outline-none text-sm"
+                  />
+                  <button type="submit" className="p-2 bg-primary text-white rounded-lg flex items-center gap-2 text-xs font-medium">
+                    {editingCategoryId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                    {editingCategoryId ? 'Update' : 'Add'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wider opacity-40">Color:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {colors.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        onClick={() => setPrimaryColor(color.value)}
+                        className={`w-4 h-4 rounded-full transition-all ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400' : 'opacity-60'}`}
+                        style={{ backgroundColor: color.value }}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </motion.form>
+          )}
+        </AnimatePresence>
+
+        {/* Delete Category Confirmation Modal */}
+        <AnimatePresence>
+          {categoryToDelete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="w-full max-w-sm bg-white dark:bg-[#2D2D2D] rounded-3xl p-8 shadow-2xl"
+              >
+                <h3 className="text-xl font-semibold mb-2">Delete Tag?</h3>
+                <p className="text-sm opacity-60 mb-6">
+                  What should happen to the tasks in this tag?
+                </p>
+                
+                <div className="space-y-3 mb-8">
+                  <button
+                    onClick={() => setReassignCategoryId('none')}
+                    className={`w-full p-4 rounded-2xl text-left text-sm transition-all border ${reassignCategoryId === 'none' ? 'border-primary bg-primary/5' : 'border-transparent bg-gray-50 dark:bg-gray-800'}`}
+                  >
+                    <div className="font-medium">Remove Tag</div>
+                    <div className="text-xs opacity-40">Tasks will have no tag</div>
+                  </button>
+                  
+                  {categories.filter(c => c.id !== categoryToDelete).length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] uppercase tracking-wider opacity-40 ml-1">Move to:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {categories.filter(c => c.id !== categoryToDelete).map(cat => (
+                          <button
+                            key={cat.id}
+                            onClick={() => setReassignCategoryId(cat.id)}
+                            className={`px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 border ${reassignCategoryId === cat.id ? 'border-primary bg-primary/5' : 'border-transparent bg-gray-50 dark:bg-gray-800'}`}
+                          >
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                            {cat.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setCategoryToDelete(null)}
+                    className="flex-1 py-3 rounded-2xl bg-gray-100 dark:bg-gray-800 font-medium text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={deleteCategory}
+                    className="flex-1 py-3 rounded-2xl bg-red-500 text-white font-medium text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
           )}
         </AnimatePresence>
 
@@ -401,16 +630,27 @@ export default function App() {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder="What's next?"
+              placeholder={editingTodoId ? "Update task..." : "What's next?"}
               className="w-full bg-white dark:bg-[#2D2D2D] border-none rounded-2xl px-6 py-5 text-lg shadow-sm focus:ring-2 focus:ring-primary transition-all duration-300 outline-none placeholder:opacity-30"
             />
-            <button
-              type="submit"
-              disabled={!inputValue.trim()}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-primary text-white rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {editingTodoId && (
+                <button
+                  type="button"
+                  onClick={cancelEditing}
+                  className="p-3 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl transition-all hover:scale-105 active:scale-95"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!inputValue.trim()}
+                className="p-3 bg-primary text-white rounded-xl disabled:opacity-20 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95"
+              >
+                {editingTodoId ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+              </button>
+            </div>
           </form>
 
           {/* Task Options (Category, Due Date, Reminder) */}
@@ -536,7 +776,10 @@ export default function App() {
                     )}
                   </button>
                   
-                  <div className="flex-grow flex flex-col gap-1">
+                  <div 
+                    className="flex-grow flex flex-col gap-1 cursor-pointer"
+                    onClick={() => startEditing(todo)}
+                  >
                     <span className={`text-lg transition-all duration-300 ${todo.completed ? 'line-through text-gray-400 dark:text-gray-500' : ''}`}>
                       {todo.text}
                     </span>
@@ -564,12 +807,22 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => deleteTodo(todo.id)}
-                    className="opacity-0 group-hover:opacity-100 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-lg transition-all duration-200"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => startEditing(todo)}
+                      className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all duration-200"
+                      title="Edit Task"
+                    >
+                      <Edit2 className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => deleteTodo(todo.id)}
+                      className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-500 rounded-lg transition-all duration-200"
+                      title="Delete Task"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
                 </motion.div>
               );
             })}
