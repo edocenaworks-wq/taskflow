@@ -183,8 +183,8 @@ export default function App() {
             {
               id: TASK_ACTION_TYPE,
               actions: [
-                { id: 'complete', title: 'Completata', foreground: true },
-                { id: 'snooze', title: 'Posticipa (30m)', foreground: true }
+                { id: 'complete', title: 'Mark as Completed', foreground: true },
+                { id: 'snooze', title: 'Postpone (30m)', foreground: true }
               ]
             }
           ]
