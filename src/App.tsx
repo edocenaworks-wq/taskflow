@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, FormEvent, useMemo, ChangeEvent } from 'react';
+import { useState, useEffect, FormEvent, useMemo, ChangeEvent, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, X, Upload, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -41,11 +41,18 @@ const COLORS = [
 ];
 
 const CURRENT_VERSION = '1.0.0';
+const TASK_ACTION_TYPE = 'TASK_REMINDER_ACTIONS';
 
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [inputValue, setInputValue] = useState('');
   
+  // Use ref to keep track of latest todos for the notification listener
+  const todosRef = useRef<Todo[]>([]);
+  useEffect(() => {
+    todosRef.current = todos;
+  }, [todos]);
+
   const [categories, setCategories] = useState<Category[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('taskflow-categories');
@@ -122,16 +129,101 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Request notification permissions
+  const scheduleNotification = async (todo: Todo, timeStr: string) => {
+    if (!timeStr) return undefined;
+    
+    const scheduleDate = new Date(timeStr);
+    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
+      return undefined;
+    }
+
+    const id = Math.floor(Math.random() * 1000000);
+    
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            title: 'Task Reminder',
+            body: todo.text,
+            id: id,
+            schedule: { at: scheduleDate },
+            sound: 'default',
+            actionTypeId: TASK_ACTION_TYPE,
+            extra: { todoId: todo.id }
+          },
+        ],
+      });
+      return id;
+    } catch (e) {
+      console.error('Failed to schedule notification', e);
+      return undefined;
+    }
+  };
+
+  const cancelNotification = async (id?: number) => {
+    if (id === undefined) return;
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id }] });
+    } catch (e) {
+      console.error('Failed to cancel notification', e);
+    }
+  };
+
+  // Request notification permissions and setup actions/listeners
   useEffect(() => {
-    const requestPermissions = async () => {
+    let notificationListener: any;
+
+    const setupNotifications = async () => {
       try {
         await LocalNotifications.requestPermissions();
+
+        // Define actions for notifications
+        await LocalNotifications.setActions({
+          types: [
+            {
+              id: TASK_ACTION_TYPE,
+              actions: [
+                { id: 'complete', title: 'Completata', foreground: true },
+                { id: 'snooze', title: 'Posticipa (30m)', foreground: true }
+              ]
+            }
+          ]
+        });
+
+        // Handle action performed
+        notificationListener = await LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
+          const { actionId, notification } = action;
+          const todoId = notification.extra?.todoId;
+
+          if (!todoId) return;
+
+          if (actionId === 'complete') {
+            setTodos(prev => prev.map(t => t.id === todoId ? { ...t, completed: true } : t));
+          } else if (actionId === 'snooze') {
+            const todoToSnooze = todosRef.current.find(t => t.id === todoId);
+            if (todoToSnooze) {
+              const snoozeTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+              const newId = await scheduleNotification(todoToSnooze, snoozeTime);
+              setTodos(prev => prev.map(t => t.id === todoId ? {
+                ...t,
+                reminderTime: snoozeTime,
+                reminderId: newId
+              } : t));
+            }
+          }
+        });
       } catch (e) {
-        console.error('Failed to request notification permissions', e);
+        console.error('Failed to setup notifications', e);
       }
     };
-    requestPermissions();
+
+    setupNotifications();
+
+    return () => {
+      if (notificationListener) {
+        notificationListener.remove();
+      }
+    };
   }, []);
 
   // Check for updates
@@ -151,48 +243,10 @@ export default function App() {
         console.error('Failed to check for updates', e);
       }
     };
-    
+
     // Check on mount
     checkForUpdates();
   }, []);
-
-  const scheduleNotification = async (todo: Todo, timeStr: string) => {
-    if (!timeStr) return undefined;
-    
-    const scheduleDate = new Date(timeStr);
-    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
-      return undefined;
-    }
-
-    const id = Math.floor(Math.random() * 1000000);
-    
-    try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            title: 'Task Reminder',
-            body: todo.text,
-            id: id,
-            schedule: { at: scheduleDate },
-            sound: 'default'
-          },
-        ],
-      });
-      return id;
-    } catch (e) {
-      console.error('Failed to schedule notification', e);
-      return undefined;
-    }
-  };
-
-  const cancelNotification = async (id?: number) => {
-    if (id === undefined) return;
-    try {
-      await LocalNotifications.cancel({ notifications: [{ id }] });
-    } catch (e) {
-      console.error('Failed to cancel notification', e);
-    }
-  };
 
   const addTodo = async (e?: FormEvent) => {
     e?.preventDefault();
