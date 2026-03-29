@@ -5,7 +5,7 @@
 
 import { useState, useEffect, FormEvent, useMemo, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, X, Upload, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -32,6 +32,12 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: '1', name: 'Work', color: '#515C97' },
   { id: '2', name: 'Personal', color: '#10b981' },
   { id: '3', name: 'Urgent', color: '#ef4444' },
+];
+
+const COLORS = [
+  { name: 'Indigo', value: '#515C97' },
+  { name: 'Red', value: '#db2929' },
+  { name: 'Original', value: '#1A1A1A' },
 ];
 
 const CURRENT_VERSION = '1.0.0';
@@ -77,12 +83,6 @@ export default function App() {
     return false;
   });
 
-  const colors = [
-    { name: 'Indigo', value: '#515C97' },
-    { name: 'Red', value: '#db2929' },
-    { name: 'Original', value: '#1A1A1A' },
-  ];
-
   // Handle color changes
   useEffect(() => {
     document.documentElement.style.setProperty('--primary-color', primaryColor);
@@ -126,8 +126,7 @@ export default function App() {
   useEffect(() => {
     const requestPermissions = async () => {
       try {
-        const result = await LocalNotifications.requestPermissions();
-        console.log('Notification permission result:', result);
+        await LocalNotifications.requestPermissions();
       } catch (e) {
         console.error('Failed to request notification permissions', e);
       }
@@ -175,10 +174,7 @@ export default function App() {
             body: todo.text,
             id: id,
             schedule: { at: scheduleDate },
-            sound: 'default',
-            attachments: [],
-            actionTypeId: '',
-            extra: null,
+            sound: 'default'
           },
         ],
       });
@@ -207,9 +203,9 @@ export default function App() {
       const existingTodo = todos.find(t => t.id === editingTodoId);
       if (!existingTodo) return;
 
-      // If reminder changed, cancel old and schedule new
+      // If reminder or text changed, cancel old and schedule new
       let newReminderId = existingTodo.reminderId;
-      if (reminderTime !== existingTodo.reminderTime) {
+      if (reminderTime !== existingTodo.reminderTime || inputValue.trim() !== existingTodo.text) {
         if (existingTodo.reminderId) {
           await cancelNotification(existingTodo.reminderId);
         }
@@ -232,7 +228,7 @@ export default function App() {
       setEditingTodoId(null);
     } else {
       // Add new todo
-      const todoId = crypto.randomUUID();
+      const todoId = window.crypto.randomUUID();
       const newTodoBase: Todo = {
         id: todoId,
         text: inputValue.trim(),
@@ -289,7 +285,7 @@ export default function App() {
     if (!newCategoryName.trim()) return;
 
     const newCategory: Category = {
-      id: crypto.randomUUID(),
+      id: window.crypto.randomUUID(),
       name: newCategoryName.trim(),
       color: primaryColor, // Use current primary color for new categories
     };
@@ -425,7 +421,7 @@ export default function App() {
         if (data.todos) setTodos(data.todos);
         if (data.categories) setCategories(data.categories);
         if (data.primaryColor) setPrimaryColor(data.primaryColor);
-        if (data.isDarkMode) setIsDarkMode(data.isDarkMode);
+        if (data.isDarkMode !== undefined) setIsDarkMode(data.isDarkMode);
         alert('Data imported successfully!');
       } catch (err) {
         console.error('Failed to import data', err);
@@ -450,7 +446,7 @@ export default function App() {
             <div className="flex items-center gap-4">
               {/* Color Selector */}
               <div id="color-selector" className="flex items-center gap-2 p-1.5 bg-white dark:bg-[#2D2D2D] rounded-full shadow-sm">
-                {colors.map((color, index) => (
+                {COLORS.map((color) => (
                   <button
                     id={`color-btn-${color.name.toLowerCase()}`}
                     key={color.value}
@@ -458,6 +454,7 @@ export default function App() {
                     className={`w-5 h-5 rounded-full transition-all hover:scale-110 active:scale-90 ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : 'opacity-60 hover:opacity-100'}`}
                     style={{ backgroundColor: color.value }}
                     title={color.name}
+                    aria-label={`Change theme to ${color.name}`}
                   />
                 ))}
               </div>
@@ -566,13 +563,14 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] uppercase tracking-wider opacity-40">Color:</span>
                   <div className="flex flex-wrap gap-2">
-                    {colors.map((color) => (
+                    {COLORS.map((color) => (
                       <button
                         key={color.value}
                         type="button"
                         onClick={() => setPrimaryColor(color.value)}
                         className={`w-4 h-4 rounded-full transition-all ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400' : 'opacity-60'}`}
                         style={{ backgroundColor: color.value }}
+                        aria-label={`Select ${color.name} color`}
                       />
                     ))}
                   </div>
