@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, FormEvent, useMemo, ChangeEvent, useRef } from 'react';
+import { useState, useEffect, FormEvent, useMemo, ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, X, Upload, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Circle, ListTodo, Moon, Sun, Download, Tag, Filter, X, ChevronDown, Upload, FileJson, Bell, Calendar as CalendarIcon, Clock, Edit2, Save } from 'lucide-react';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
@@ -34,25 +34,12 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: '3', name: 'Urgent', color: '#ef4444' },
 ];
 
-const COLORS = [
-  { name: 'Indigo', value: '#515C97' },
-  { name: 'Red', value: '#db2929' },
-  { name: 'Original', value: '#1A1A1A' },
-];
-
 const CURRENT_VERSION = '1.0.0';
-const TASK_ACTION_TYPE = 'TASK_REMINDER_ACTIONS';
 
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [inputValue, setInputValue] = useState('');
   
-  // Use ref to keep track of latest todos for the notification listener
-  const todosRef = useRef<Todo[]>([]);
-  useEffect(() => {
-    todosRef.current = todos;
-  }, [todos]);
-
   const [categories, setCategories] = useState<Category[]>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('taskflow-categories');
@@ -89,6 +76,12 @@ export default function App() {
     }
     return false;
   });
+
+  const colors = [
+    { name: 'Indigo', value: '#515C97' },
+    { name: 'Red', value: '#db2929' },
+    { name: 'Original', value: '#1A1A1A' },
+  ];
 
   // Handle color changes
   useEffect(() => {
@@ -129,101 +122,29 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  const scheduleNotification = async (todo: Todo, timeStr: string) => {
-    if (!timeStr) return undefined;
-    
-    const scheduleDate = new Date(timeStr);
-    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
-      return undefined;
-    }
-
-    const id = Math.floor(Math.random() * 1000000);
-    
-    try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            title: 'Task Reminder',
-            body: todo.text,
-            id: id,
-            schedule: { at: scheduleDate },
-            sound: 'default',
-            actionTypeId: TASK_ACTION_TYPE,
-            extra: { todoId: todo.id }
-          },
-        ],
-      });
-      return id;
-    } catch (e) {
-      console.error('Failed to schedule notification', e);
-      return undefined;
-    }
-  };
-
-  const cancelNotification = async (id?: number) => {
-    if (id === undefined) return;
-    try {
-      await LocalNotifications.cancel({ notifications: [{ id }] });
-    } catch (e) {
-      console.error('Failed to cancel notification', e);
-    }
-  };
-
-  // Request notification permissions and setup actions/listeners
+  // Request notification permissions and create channel
   useEffect(() => {
-    let notificationListener: any;
-
     const setupNotifications = async () => {
       try {
-        await LocalNotifications.requestPermissions();
-
-        // Define actions for notifications
-        await LocalNotifications.setActions({
-          types: [
-            {
-              id: TASK_ACTION_TYPE,
-              actions: [
-                { id: 'complete', title: 'Mark as Completed', foreground: true },
-                { id: 'snooze', title: 'Postpone (30m)', foreground: true }
-              ]
-            }
-          ]
-        });
-
-        // Handle action performed
-        notificationListener = await LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
-          const { actionId, notification } = action;
-          const todoId = notification.extra?.todoId;
-
-          if (!todoId) return;
-
-          if (actionId === 'complete') {
-            setTodos(prev => prev.map(t => t.id === todoId ? { ...t, completed: true } : t));
-          } else if (actionId === 'snooze') {
-            const todoToSnooze = todosRef.current.find(t => t.id === todoId);
-            if (todoToSnooze) {
-              const snoozeTime = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-              const newId = await scheduleNotification(todoToSnooze, snoozeTime);
-              setTodos(prev => prev.map(t => t.id === todoId ? {
-                ...t,
-                reminderTime: snoozeTime,
-                reminderId: newId
-              } : t));
-            }
-          }
-        });
+        const result = await LocalNotifications.requestPermissions();
+        console.log('Notification permission result:', result);
+        
+        if (Capacitor.isNativePlatform()) {
+          await LocalNotifications.createChannel({
+            id: 'task-reminders',
+            name: 'Task Reminders',
+            description: 'Notifications for task reminders',
+            importance: 5, // High importance
+            visibility: 1, // Public
+            sound: 'default',
+            vibration: true,
+          });
+        }
       } catch (e) {
         console.error('Failed to setup notifications', e);
       }
     };
-
     setupNotifications();
-
-    return () => {
-      if (notificationListener) {
-        notificationListener.remove();
-      }
-    };
   }, []);
 
   // Check for updates
@@ -243,10 +164,55 @@ export default function App() {
         console.error('Failed to check for updates', e);
       }
     };
-
+    
     // Check on mount
     checkForUpdates();
   }, []);
+
+  const scheduleNotification = async (todo: Todo, timeStr: string) => {
+    if (!timeStr) return undefined;
+    
+    const scheduleDate = new Date(timeStr);
+    if (isNaN(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) {
+      return undefined;
+    }
+
+    const id = Math.floor(Math.random() * 1000000);
+    
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            title: 'Task Reminder',
+            body: todo.text,
+            id: id,
+            schedule: { 
+              at: scheduleDate,
+              allowWhileIdle: true,
+            },
+            sound: 'default',
+            channelId: 'task-reminders',
+            attachments: [],
+            actionTypeId: '',
+            extra: null,
+          },
+        ],
+      });
+      return id;
+    } catch (e) {
+      console.error('Failed to schedule notification', e);
+      return undefined;
+    }
+  };
+
+  const cancelNotification = async (id?: number) => {
+    if (id === undefined) return;
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id }] });
+    } catch (e) {
+      console.error('Failed to cancel notification', e);
+    }
+  };
 
   const addTodo = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -257,9 +223,9 @@ export default function App() {
       const existingTodo = todos.find(t => t.id === editingTodoId);
       if (!existingTodo) return;
 
-      // If reminder or text changed, cancel old and schedule new
+      // If reminder changed, cancel old and schedule new
       let newReminderId = existingTodo.reminderId;
-      if (reminderTime !== existingTodo.reminderTime || inputValue.trim() !== existingTodo.text) {
+      if (reminderTime !== existingTodo.reminderTime) {
         if (existingTodo.reminderId) {
           await cancelNotification(existingTodo.reminderId);
         }
@@ -282,7 +248,7 @@ export default function App() {
       setEditingTodoId(null);
     } else {
       // Add new todo
-      const todoId = window.crypto.randomUUID();
+      const todoId = crypto.randomUUID();
       const newTodoBase: Todo = {
         id: todoId,
         text: inputValue.trim(),
@@ -339,7 +305,7 @@ export default function App() {
     if (!newCategoryName.trim()) return;
 
     const newCategory: Category = {
-      id: window.crypto.randomUUID(),
+      id: crypto.randomUUID(),
       name: newCategoryName.trim(),
       color: primaryColor, // Use current primary color for new categories
     };
@@ -475,7 +441,7 @@ export default function App() {
         if (data.todos) setTodos(data.todos);
         if (data.categories) setCategories(data.categories);
         if (data.primaryColor) setPrimaryColor(data.primaryColor);
-        if (data.isDarkMode !== undefined) setIsDarkMode(data.isDarkMode);
+        if (data.isDarkMode) setIsDarkMode(data.isDarkMode);
         alert('Data imported successfully!');
       } catch (err) {
         console.error('Failed to import data', err);
@@ -500,7 +466,7 @@ export default function App() {
             <div className="flex items-center gap-4">
               {/* Color Selector */}
               <div id="color-selector" className="flex items-center gap-2 p-1.5 bg-white dark:bg-[#2D2D2D] rounded-full shadow-sm">
-                {COLORS.map((color) => (
+                {colors.map((color, index) => (
                   <button
                     id={`color-btn-${color.name.toLowerCase()}`}
                     key={color.value}
@@ -508,7 +474,6 @@ export default function App() {
                     className={`w-5 h-5 rounded-full transition-all hover:scale-110 active:scale-90 ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-gray-500' : 'opacity-60 hover:opacity-100'}`}
                     style={{ backgroundColor: color.value }}
                     title={color.name}
-                    aria-label={`Change theme to ${color.name}`}
                   />
                 ))}
               </div>
@@ -617,14 +582,13 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] uppercase tracking-wider opacity-40">Color:</span>
                   <div className="flex flex-wrap gap-2">
-                    {COLORS.map((color) => (
+                    {colors.map((color) => (
                       <button
                         key={color.value}
                         type="button"
                         onClick={() => setPrimaryColor(color.value)}
                         className={`w-4 h-4 rounded-full transition-all ${primaryColor === color.value ? 'ring-2 ring-offset-2 ring-gray-400' : 'opacity-60'}`}
                         style={{ backgroundColor: color.value }}
-                        aria-label={`Select ${color.name} color`}
                       />
                     ))}
                   </div>
