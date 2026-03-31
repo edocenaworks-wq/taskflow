@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "assets": "capacitor-assets generate --android"
+    "assets": "shx cp assets/logo.png assets/icon.png && capacitor-assets generate --android"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
